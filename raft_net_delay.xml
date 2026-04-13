@@ -1,0 +1,824 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+	<declaration>// Global Declarations
+clock stableTimer;
+const int N=7;
+const int StableLeaderHeartbeatCount = 50;
+int heartbeatTerm;
+int heartbeatCounter;
+
+// nodes sync on this channel once StableLeaderHeartbeatCount heartbeats have been sent by a single Leader
+// to symbolize that the system has reached a stable state, with one leader and the rest followers
+broadcast chan stable;
+broadcast chan heartbeat;
+
+// Upper and lower bounds for election timeout (ET)
+const int ET_MIN = 1000;
+const int ET_MAX = 1999;
+
+// Upper and lower bounds for heartbeat timeout (HB)
+const int HBT_MIN = 50;
+const int HBT_MAX = 100;
+
+// Network delay bounds
+const int NET_DELAY_MIN = 20;
+const int NET_DELAY_MAX = 40;
+
+// Message buffers: one slot per (src, dst)
+int msg[N][N];        // 1 = vote request submitted from node i to node j , 0 = empty
+int delivered[N][N];  // 1 = arrived, 0 = in flight
+
+// Network Transmission Delay timers per (src, dst)
+clock netTimer[N][N];
+int netDelay[N][N];
+
+// term according to each candidate
+int candidateTerms[N];
+
+// Votes for each candidate
+int[0,N] votes[N];
+
+int max(int a, int b) {
+    return (a &gt; b) ? a : b;
+}
+
+int rand(int min, int max) {
+  return fint(random(max - min) + min);
+}</declaration>
+	<template>
+		<name x="5" y="5">Node</name>
+		<parameter>int[0, N-1] id</parameter>
+		<declaration>// Local Declarations
+clock timer;
+int currentTerm;
+int timeout = rand(ET_MIN, ET_MAX);
+int voted = false;
+
+void sendVoteRequest() {
+    for (i : int[0,N-1]) {
+      netTimer[id][i] = 0;
+      if (i != id) {
+        candidateTerms[id] = currentTerm;
+        msg[id][i] = 1;
+        delivered[id][i] = 0;
+        netDelay[id][i] = rand(NET_DELAY_MIN, NET_DELAY_MAX);
+       }
+    }
+}
+
+void vote() {   
+    for (j : int[0,N-1]) {
+      if (delivered[j][id] == 1) {
+        delivered[j][id] = 0; // clear msg
+        msg[j][id] = 0; // clear msg
+        votes[j]++; // vote for the candidate that sent the voteRequest
+        currentTerm = candidateTerms[j];
+        voted = true;
+        return;
+      }
+    }    
+}
+
+bool hasMsg() {
+    for (j : int[0,N-1]) {
+        if (delivered[j][id] == 1)
+            return true;   
+    }
+    return false;
+}
+
+bool higherTerm() {
+    for (i : int[0,N-1]) {
+        if (delivered[i][id] == 1 &amp;&amp; candidateTerms[i] &gt; currentTerm)
+            return true;
+    }
+    return false;
+}</declaration>
+		<location id="id0" x="442" y="153">
+			<name x="314" y="102">Follower</name>
+			<label kind="invariant" x="280" y="119">timer &lt;= timeout</label>
+		</location>
+		<location id="id1" x="867" y="153">
+			<name x="740" y="102">Candidate</name>
+			<label kind="invariant" x="714" y="119">timer &lt;= timeout</label>
+		</location>
+		<location id="id2" x="1453" y="153">
+			<name x="1318" y="102">Leader</name>
+			<label kind="invariant" x="1292" y="119">timer &lt;= timeout</label>
+		</location>
+		<location id="id3" x="1632" y="297">
+			<committed/>
+		</location>
+		<location id="id4" x="442" y="442">
+			<name x="399" y="459">StepDown</name>
+			<committed/>
+		</location>
+		<location id="id5" x="1615" y="0">
+			<name x="1596" y="-59">StableLeader</name>
+			<label kind="invariant" x="1596" y="-42">stableTimer' == 0</label>
+			<label kind="comments" x="1513" y="-229">The machine moves to this state once
+ it has sent enough heartbeats to 
+safely say it is a stable leader.
+
+This is to make the state space
+finite, which allows the model
+checker to verify it.</label>
+		</location>
+		<location id="id6" x="102" y="153">
+			<name x="17" y="102">FollowingStableLeader</name>
+			<label kind="invariant" x="16" y="119">stableTimer' == 0</label>
+		</location>
+		<init ref="id0"/>
+		<transition id="id7">
+			<source ref="id0"/>
+			<target ref="id1"/>
+			<label kind="guard" x="501" y="25">timer &gt;= timeout</label>
+			<label kind="assignment" x="501" y="42">currentTerm:=(++currentTerm),
+votes[id]:=1,
+voted:=true,
+timer:=0,
+sendVoteRequest()</label>
+		</transition>
+		<transition id="id8">
+			<source ref="id0"/>
+			<target ref="id6"/>
+			<label kind="synchronisation" x="136" y="161">stable?</label>
+			<label kind="assignment" x="136" y="178">stableTimer := 0</label>
+		</transition>
+		<transition id="id9">
+			<source ref="id2"/>
+			<target ref="id5"/>
+			<label kind="guard" x="1572" y="42">timer&gt;=timeout
+&amp;&amp; heartbeatCounter &gt; StableLeaderHeartbeatCount</label>
+			<label kind="synchronisation" x="1572" y="85">stable!</label>
+			<label kind="assignment" x="1572" y="102">stableTimer := 0</label>
+		</transition>
+		<transition id="id10">
+			<source ref="id1"/>
+			<target ref="id4"/>
+			<label kind="guard" x="824" y="306">hasMsg() &amp;&amp; higherTerm()</label>
+			<label kind="assignment" x="824" y="323">votes[id]:=0,
+vote()</label>
+			<nail x="807" y="340"/>
+		</transition>
+		<transition id="id11">
+			<source ref="id2"/>
+			<target ref="id4"/>
+			<label kind="guard" x="1190" y="382">currentTerm &lt; heartbeatTerm</label>
+			<label kind="synchronisation" x="1190" y="399">heartbeat?</label>
+			<label kind="assignment" x="1190" y="416">currentTerm:=heartbeatTerm</label>
+			<nail x="1122" y="434"/>
+		</transition>
+		<transition id="id12">
+			<source ref="id1"/>
+			<target ref="id4"/>
+			<label kind="guard" x="510" y="220">currentTerm&lt;=heartbeatTerm</label>
+			<label kind="synchronisation" x="510" y="237">heartbeat?</label>
+			<label kind="assignment" x="510" y="254">votes[id]:=0,
+currentTerm:=heartbeatTerm</label>
+			<nail x="748" y="297"/>
+		</transition>
+		<transition id="id13">
+			<source ref="id4"/>
+			<target ref="id0"/>
+			<label kind="assignment" x="178" y="365">timer:=0,
+timeout := rand(ET_MIN, ET_MAX)</label>
+		</transition>
+		<transition id="id14">
+			<source ref="id3"/>
+			<target ref="id2"/>
+			<label kind="synchronisation" x="1419" y="280">heartbeat!</label>
+			<label kind="assignment" x="1419" y="297">timer:=0,
+heartbeatCounter++</label>
+			<nail x="1496" y="272"/>
+		</transition>
+		<transition id="id15">
+			<source ref="id2"/>
+			<target ref="id3"/>
+			<label kind="guard" x="1572" y="195">timer&gt;=timeout 
+&amp;&amp; heartbeatCounter &lt;= StableLeaderHeartbeatCount</label>
+		</transition>
+		<transition id="id16">
+			<source ref="id1"/>
+			<target ref="id1"/>
+			<label kind="guard" x="790" y="-170">timer == timeout &amp;&amp; votes[id] &lt; ((N/2)+1)</label>
+			<label kind="assignment" x="790" y="-153">currentTerm:=(++currentTerm),
+votes[id]:=1,
+voted:=true,
+timer:=0,
+timeout := rand(ET_MIN, ET_MAX),
+sendVoteRequest()</label>
+			<label kind="comments" x="790" y="-255">A new timeout is randomly selected
+each time the the Candidate starts
+a new term to prevent repeated
+split votes.</label>
+			<nail x="824" y="-25"/>
+			<nail x="901" y="-25"/>
+		</transition>
+		<transition id="id17">
+			<source ref="id0"/>
+			<target ref="id0"/>
+			<label kind="synchronisation" x="365" y="-136">heartbeat?</label>
+			<label kind="assignment" x="365" y="-119">timer:=0,
+currentTerm:=
+    max(currentTerm, heartbeatTerm),
+voted:=false</label>
+			<label kind="comments" x="365" y="-263">Follower's election timeout resets
+when it receives a heartbeat from 
+Leader.
+
+Also, voted is set to false
+in prep for the next term.</label>
+			<nail x="399" y="-25"/>
+			<nail x="475" y="-25"/>
+		</transition>
+		<transition id="id18">
+			<source ref="id0"/>
+			<target ref="id0"/>
+			<label kind="guard" x="-51" y="272">hasMsg() &amp;&amp; (voted == false || higherTerm())</label>
+			<label kind="assignment" x="-51" y="289">vote(),
+timer:=0</label>
+			<nail x="297" y="255"/>
+			<nail x="348" y="306"/>
+		</transition>
+		<transition id="id19">
+			<source ref="id1"/>
+			<target ref="id2"/>
+			<label kind="guard" x="986" y="0">votes[id]&gt;=((N/2)+1) &amp;&amp; timer &lt;= timeout</label>
+			<label kind="assignment" x="986" y="17">heartbeatTerm=max(heartbeatTerm, currentTerm),
+timeout := rand(HBT_MIN, HBT_MAX),
+votes[id]:=0,
+voted:=false,
+timer:=0,
+heartbeatCounter:=0</label>
+		</transition>
+	</template>
+	<template>
+		<name>SplitVoteCounter</name>
+		<declaration>int splitVoteCount = 0;
+int lastSeenTerm = -1;
+
+void count() {
+    for (i : int[0,N-1]) {
+        if (votes[i] &gt; 1) {
+            for (j : int[0,N-1]) {
+                if (i!=j &amp;&amp; votes[i] == votes[j] 
+                    &amp;&amp; candidateTerms[i] &gt; lastSeenTerm 
+                    &amp;&amp; candidateTerms[i] == candidateTerms[j]) {
+                    splitVoteCount++;
+                    lastSeenTerm = candidateTerms[i];
+                }
+            }
+        }
+    }
+}</declaration>
+		<location id="id20" x="0" y="0">
+			<label kind="exponentialrate" x="-17" y="17">100</label>
+			<label kind="comments" x="-170" y="42">Setting the location's rate of exponential
+to λ=100 means Pr[leaving location after t]= 1−exp(-100t).
+This means the statistical model checker will take the
+transition basically as soon as it's enabled.</label>
+		</location>
+		<location id="id21" x="119" y="0">
+			<name x="102" y="8">Done</name>
+		</location>
+		<init ref="id20"/>
+		<transition id="id22">
+			<source ref="id20"/>
+			<target ref="id21"/>
+			<label kind="synchronisation" x="25" y="-17">stable?</label>
+		</transition>
+		<transition id="id23">
+			<source ref="id20"/>
+			<target ref="id20"/>
+			<label kind="assignment" x="-25" y="-76">count()</label>
+			<nail x="-25" y="-51"/>
+			<nail x="25" y="-51"/>
+		</transition>
+	</template>
+	<template>
+		<name>Network</name>
+		<declaration>void run() {  
+    for (i : int[0,N-1]) {
+      for (j : int[0,N-1]) {
+        if (msg[i][j] == 1 &amp;&amp; delivered[i][j] == 0 &amp;&amp; netTimer[i][j] &gt;= netDelay[i][j]) {
+          delivered[i][j] = 1;
+        }
+      }
+    }    
+}
+
+bool hasDeliverable() {  
+  for (i : int[0,N-1]) {
+      for (j : int[0,N-1]) {
+          if (msg[i][j] == 1 &amp;&amp; delivered[i][j] == 0 &amp;&amp; netTimer[i][j] &gt;= netDelay[i][j])
+              return true;
+      }
+  }
+  return false;
+}</declaration>
+		<location id="id24" x="0" y="0">
+			<label kind="exponentialrate" x="-17" y="17">100</label>
+			<label kind="comments" x="-212" y="59">Setting the location's rate of exponential
+to λ=100 means Pr[leaving location after t]= 1−exp(-100t).
+This means the statistical model checker will take the
+transition basically as soon as it's enabled.</label>
+		</location>
+		<init ref="id24"/>
+		<transition id="id25">
+			<source ref="id24"/>
+			<target ref="id24"/>
+			<label kind="guard" x="-42" y="-119">hasDeliverable()</label>
+			<label kind="assignment" x="-42" y="-102">run()</label>
+			<nail x="-42" y="-76"/>
+			<nail x="51" y="-76"/>
+		</transition>
+	</template>
+	<system>const int C_RED    = 0;
+const int C_YELLOW = 6;
+const int C_GREEN  = 1;
+
+counter := SplitVoteCounter();
+net := Network();
+
+node0 := Node(0);
+node1 := Node(1);
+node2 := Node(2);
+node3 := Node(3);
+node4 := Node(4);
+node5 := Node(5);
+node6 := Node(6);
+
+//system counter, net, node0, node1, node2, node3, node4, node5, node6;
+system net, node0, node1, node2, node3, node4, node5, node6; // you have to disable the counter in order to run any other statistical queries
+
+gantt {
+    node0:
+      node0.Follower  -&gt; C_RED,
+      node0.Candidate -&gt; C_YELLOW,
+      node0.Leader    -&gt; C_GREEN;
+
+    node1:
+      node1.Follower  -&gt; C_RED,
+      node1.Candidate -&gt; C_YELLOW,
+      node1.Leader    -&gt; C_GREEN;
+
+    node2:
+      node2.Follower  -&gt; C_RED,
+      node2.Candidate -&gt; C_YELLOW,
+      node2.Leader    -&gt; C_GREEN;
+
+    node3:
+      node3.Follower  -&gt; C_RED,
+      node3.Candidate -&gt; C_YELLOW,
+      node3.Leader    -&gt; C_GREEN;
+
+    node4:
+      node4.Follower  -&gt; C_RED,
+      node4.Candidate -&gt; C_YELLOW,
+      node4.Leader    -&gt; C_GREEN;
+}</system>
+	<queries>
+		<option key="--exploration" value="1"/>
+		<query>
+			<formula>E[&lt;=10000; 20000] (max: node0.StableLeader + node1.StableLeader + node2.StableLeader + node3.StableLeader + node4.StableLeader + node5.StableLeader + node6.StableLeader)</formula>
+			<comment>Estimate the maximum number of allowed stable leaders</comment>
+			<option key="--exploration" value="0"/>
+			<option key="--diagnostic" value="0"/>
+		</query>
+		<query>
+			<formula>E[&lt;=15000; 10000] (max: stableTimer)</formula>
+			<comment>Estimate the maximum time it takes to reach a stable leader.</comment>
+			<option key="--exploration" value="0"/>
+		</query>
+		<query>
+			<formula>Pr[&lt;=7220](&lt;&gt; node0.StableLeader + node1.StableLeader + node2.StableLeader + node3.StableLeader + node4.StableLeader + node5.StableLeader + node6.StableLeader == 1)</formula>
+			<comment>Estimate the probability of reaching a stable state in less than 3.5 seconds</comment>
+			<option key="--exploration" value="0"/>
+			<option key="--alpha" value="0.001"/>
+			<option key="--beta" value="0.01"/>
+			<option key="--upper-delta" value="0.001"/>
+			<result outcome="success" type="interval" value="≥ 0.950267 (99.9% CI)" timestamp="2026-04-13 12:56:54 -0700">
+				<option key="--exploration" value="0"/>
+				<option key="--alpha" value="0.001"/>
+				<option key="--beta" value="0.01"/>
+				<option key="--upper-delta" value="0.001"/>
+				<details>≥ 0.950267 (99.9% CI)</details>
+				<plot title="Probability Density Distribution" xaxis="run duration in time" yaxis="probability density">
+					<series title="density" type="b(221.093372)" color="0x0000ff" encoding="csv">4132.2442315118715,2.4284434546829002E-4
+4353.337603335083,1.8213325910121752E-4
+4574.430975158296,5.767553204871887E-4
+4795.524346981508,4.249776045695075E-4
+5016.61771880472,3.946220613859713E-4
+5237.711090627932,4.8568869093658005E-4
+5458.804462451144,3.6426651820243504E-4
+5679.897834274357,3.035554318353625E-4
+5900.991206097569,3.035554318353625E-4
+6122.084577920781,3.035554318353625E-4
+6343.177949743993,3.3391097501889877E-4
+6564.271321567206,3.946220613859713E-4
+6785.364693390417,2.1248880228475376E-4
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">5532.981197676094,0.0
+5532.981197676094,5.767553204871888E-4
+					</series>
+					<comment>Parameters: α=0.001, ε=0.05, bucket width=221.09, bucket count=13
+Runs: 149 in total, 149 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4132, 7006]
+Mean estimate of displayed sample: 5533 ± 214.2 (99.9% CI)</comment>
+				</plot>
+				<plot title="Probability Density Confidence Intervals" xaxis="run duration in time" yaxis="probability density">
+					<series title="upper limit" type="b(221.093372)" color="0xa0a0ff" encoding="csv">4132.2442315118715,0.14212614969467122
+4353.337603335083,0.1223900984275675
+4574.430975158296,0.23921022447467374
+4795.524346981508,0.19682167940273526
+5016.61771880472,0.18805164562918386
+5237.711090627932,0.21404630825073911
+5458.804462451144,0.17916300660661305
+5679.897834274357,0.16097709545941008
+5900.991206097569,0.16097709545941008
+6122.084577920781,0.16097709545941008
+6343.177949743993,0.17014322175582539
+6564.271321567206,0.18805164562918386
+6785.364693390417,0.13238756866611529
+					</series>
+					<series title="lower limit" type="b(221.093372)" color="0x0000ff" encoding="csv">4132.2442315118715,0.012078800962527026
+4353.337603335083,0.006580730575770777
+4574.430975158296,0.0543961253087793
+4795.524346981508,0.03333144850627195
+5016.61771880472,0.02942472086543044
+5237.711090627932,0.04147587311204215
+5458.804462451144,0.0256427433241945
+5679.897834274357,0.01850958163064088
+5900.991206097569,0.01850958163064088
+6122.084577920781,0.01850958163064088
+6343.177949743993,0.021998948576831955
+6564.271321567206,0.02942472086543044
+6785.364693390417,0.009193858220384547
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">5532.981197676094,0.0
+5532.981197676094,0.0010819420885486695
+					</series>
+					<comment>Parameters: α=0.001, ε=0.05, bucket width=221.09, bucket count=13
+Runs: 149 in total, 149 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4132, 7006]
+Mean estimate of displayed sample: 5533 ± 214.2 (99.9% CI)</comment>
+				</plot>
+				<plot title="Probability Distribution" xaxis="run duration in time" yaxis="probability">
+					<series title="probability" type="b(221.093372)" color="0x0000ff" encoding="csv">4132.2442315118715,0.053691275167785234
+4353.337603335083,0.040268456375838924
+4574.430975158296,0.12751677852348994
+4795.524346981508,0.09395973154362416
+5016.61771880472,0.087248322147651
+5237.711090627932,0.10738255033557047
+5458.804462451144,0.08053691275167785
+5679.897834274357,0.06711409395973154
+5900.991206097569,0.06711409395973154
+6122.084577920781,0.06711409395973154
+6343.177949743993,0.0738255033557047
+6564.271321567206,0.087248322147651
+6785.364693390417,0.04697986577181208
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">5532.981197676094,0.0
+5532.981197676094,0.12751677852348994
+					</series>
+					<comment>Parameters: α=0.001, ε=0.05, bucket width=221.09, bucket count=13
+Runs: 149 in total, 149 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4132, 7006]
+Mean estimate of displayed sample: 5533 ± 214.2 (99.9% CI)</comment>
+				</plot>
+				<plot title="Probability Confidence Intervals" xaxis="run duration in time" yaxis="probability">
+					<series title="upper limit" type="b(221.093372)" color="0xa0a0ff" encoding="csv">4132.2442315118715,0.14212614969467122
+4353.337603335083,0.1223900984275675
+4574.430975158296,0.23921022447467374
+4795.524346981508,0.19682167940273526
+5016.61771880472,0.18805164562918386
+5237.711090627932,0.21404630825073911
+5458.804462451144,0.17916300660661305
+5679.897834274357,0.16097709545941008
+5900.991206097569,0.16097709545941008
+6122.084577920781,0.16097709545941008
+6343.177949743993,0.17014322175582539
+6564.271321567206,0.18805164562918386
+6785.364693390417,0.13238756866611529
+					</series>
+					<series title="lower limit" type="b(221.093372)" color="0x0000ff" encoding="csv">4132.2442315118715,0.012078800962527026
+4353.337603335083,0.006580730575770777
+4574.430975158296,0.0543961253087793
+4795.524346981508,0.03333144850627195
+5016.61771880472,0.02942472086543044
+5237.711090627932,0.04147587311204215
+5458.804462451144,0.0256427433241945
+5679.897834274357,0.01850958163064088
+5900.991206097569,0.01850958163064088
+6122.084577920781,0.01850958163064088
+6343.177949743993,0.021998948576831955
+6564.271321567206,0.02942472086543044
+6785.364693390417,0.009193858220384547
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">5532.981197676094,0.0
+5532.981197676094,0.23921022447467374
+					</series>
+					<comment>Parameters: α=0.001, ε=0.05, bucket width=221.09, bucket count=13
+Runs: 149 in total, 149 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4132, 7006]
+Mean estimate of displayed sample: 5533 ± 214.2 (99.9% CI)</comment>
+				</plot>
+				<plot title="Cumulative Probability Distribution" xaxis="run duration in time" yaxis="probability">
+					<series title="cumulative" type="l" color="0x000000" encoding="csv">4132.2442315118715,0.0
+4353.337603335083,0.053691275167785234
+4574.430975158296,0.09395973154362416
+4795.524346981508,0.2214765100671141
+5016.61771880472,0.31543624161073824
+5237.711090627932,0.40268456375838924
+5458.804462451144,0.5100671140939598
+5679.897834274357,0.5906040268456376
+5900.991206097569,0.6577181208053692
+6122.084577920781,0.7248322147651006
+6343.177949743993,0.7919463087248322
+6564.271321567206,0.8657718120805369
+6785.364693390417,0.9530201342281879
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">5532.981197676094,0.0
+5532.981197676094,1.0
+					</series>
+					<comment>Parameters: α=0.001, ε=0.05, bucket width=221.09, bucket count=13
+Runs: 149 in total, 149 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4132, 7006]
+Mean estimate of displayed sample: 5533 ± 214.2 (99.9% CI)</comment>
+				</plot>
+				<plot title="Cumulative Probability Confidence Intervals" xaxis="run duration in time" yaxis="probability">
+					<series title="upper limit" type="k" color="0x0000dd" encoding="csv">4132.2442315118715,0.04973346272383382
+4353.337603335083,0.14212614969467122
+4574.430975158296,0.19682167940273526
+4795.524346981508,0.34921620110380097
+5016.61771880472,0.45109528073146227
+5237.711090627932,0.5405325307818729
+5458.804462451144,0.6448707182372062
+5679.897834274357,0.7191659216055808
+5900.991206097569,0.778368545987968
+6122.084577920781,0.8348112998423058
+6343.177949743993,0.8879320946638579
+6564.271321567206,0.9411351410174481
+6785.364693390417,0.9908061417796155
+					</series>
+					<series title="lower limit" type="k" color="0xdd0000" encoding="csv">4132.2442315118715,0.0
+4353.337603335083,0.012078800962527026
+4574.430975158296,0.03333144850627195
+4795.524346981508,0.12238439915694539
+5016.61771880472,0.19869970063152737
+5237.711090627932,0.2747993098001856
+5458.804462451144,0.3742334070615063
+5679.897834274357,0.45276714991682077
+5900.991206097569,0.5209068028886746
+6122.084577920781,0.5917764982276355
+6343.177949743993,0.6659121389448234
+6564.271321567206,0.752557299715361
+6785.364693390417,0.8676124313338847
+					</series>
+					<series title="cumulative" type="l" color="0x000000" encoding="csv">4132.2442315118715,0.0
+4353.337603335083,0.053691275167785234
+4574.430975158296,0.09395973154362416
+4795.524346981508,0.2214765100671141
+5016.61771880472,0.31543624161073824
+5237.711090627932,0.40268456375838924
+5458.804462451144,0.5100671140939598
+5679.897834274357,0.5906040268456376
+5900.991206097569,0.6577181208053692
+6122.084577920781,0.7248322147651006
+6343.177949743993,0.7919463087248322
+6564.271321567206,0.8657718120805369
+6785.364693390417,0.9530201342281879
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">5532.981197676094,0.0
+5532.981197676094,1.0
+					</series>
+					<comment>Parameters: α=0.001, ε=0.05, bucket width=221.09, bucket count=13
+Runs: 149 in total, 149 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4132, 7006]
+Mean estimate of displayed sample: 5533 ± 214.2 (99.9% CI)</comment>
+				</plot>
+				<plot title="Frequency Histogram" xaxis="run duration in time" yaxis="count">
+					<series title="count" type="b(221.093372)" color="0x0000ff" encoding="csv">4132.2442315118715,8.0
+4353.337603335083,6.0
+4574.430975158296,19.0
+4795.524346981508,14.0
+5016.61771880472,13.0
+5237.711090627932,16.0
+5458.804462451144,12.0
+5679.897834274357,10.0
+5900.991206097569,10.0
+6122.084577920781,10.0
+6343.177949743993,11.0
+6564.271321567206,13.0
+6785.364693390417,7.0
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">5532.981197676094,0.0
+5532.981197676094,19.0
+					</series>
+					<comment>Parameters: α=0.001, ε=0.05, bucket width=221.09, bucket count=13
+Runs: 149 in total, 149 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4132, 7006]
+Mean estimate of displayed sample: 5533 ± 214.2 (99.9% CI)</comment>
+				</plot>
+			</result>
+		</query>
+		<query>
+			<formula>simulate[&lt;=10000; 100] {counter.splitVoteCount}</formula>
+			<comment/>
+			<option key="--exploration" value="0"/>
+		</query>
+		<query>
+			<formula>Pr[&lt;=10000] (&lt;&gt; counter.splitVoteCount &gt;= 2)</formula>
+			<comment/>
+			<option key="--exploration" value="0"/>
+			<result outcome="success" type="interval" value="≤ 0.0499441 (95% CI)" timestamp="2026-04-13 10:51:33 -0700">
+				<option key="--exploration" value="0"/>
+				<details>≤ 0.0499441 (95% CI)</details>
+			</result>
+		</query>
+		<query>
+			<formula>Pr[&lt;=15000](&lt;&gt; node0.StableLeader + node1.StableLeader + node2.StableLeader + node3.StableLeader + node4.StableLeader + node5.StableLeader + node6.StableLeader == 1)</formula>
+			<comment>Estimate that probability that the system reaches a stable state in under 15 seconds</comment>
+			<option key="--exploration" value="0"/>
+			<result outcome="success" type="interval" value="≥ 0.950056 (95% CI)" timestamp="2026-04-12 19:22:17 -0700">
+				<option key="--exploration" value="0"/>
+				<details>≥ 0.950056 (95% CI)</details>
+				<plot title="Probability Density Distribution" xaxis="run duration in time" yaxis="probability density">
+					<series title="density" type="b(728.687407)" color="0x0000ff" encoding="csv">4500.223583755778,2.66842053901431E-4
+5228.910991162223,2.477819071941859E-4
+5957.598398568667,2.8590220060867603E-4
+6686.2858059751115,1.334210269507155E-4
+7414.973213381556,9.530073353622534E-5
+8143.660620788,2.0966161377969578E-4
+8872.348028194445,7.624058682898028E-5
+9601.03543560089,3.812029341449014E-5
+10329.722843007334,1.906014670724507E-5
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">6722.462777245365,0.0
+6722.462777245365,2.859022006086761E-4
+					</series>
+					<comment>Parameters: α=0.05, ε=0.05, bucket width=728.69, bucket count=9
+Runs: 72 in total, 72 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4500, 1.106e+04]
+Mean estimate of displayed sample: 6722 ± 373.3 (95% CI)</comment>
+				</plot>
+				<plot title="Probability Density Confidence Intervals" xaxis="run duration in time" yaxis="probability density">
+					<series title="upper limit" type="b(728.687407)" color="0xa0a0ff" encoding="csv">4500.223583755778,0.30466893329868333
+5228.910991162223,0.2889434084029285
+5957.598398568667,0.32022951112937165
+6686.2858059751115,0.19011034044555922
+7414.973213381556,0.15466731481612306
+8143.660620788,0.2569401232482781
+8872.348028194445,0.13617864931292403
+9601.03543560089,0.09676728911341523
+10329.722843007334,0.07497131085391912
+					</series>
+					<series title="lower limit" type="b(728.687407)" color="0x0000ff" encoding="csv">4500.223583755778,0.1105837866784895
+5228.910991162223,0.09979350815289616
+5957.598398568667,0.12155120290780827
+6686.2858059751115,0.039989500933602505
+7414.973213381556,0.022931659153745478
+8143.660620788,0.07881196318794174
+8872.348028194445,0.015342537111130598
+9601.03543560089,0.0033819003261732383
+10329.722843007334,3.515744052335976E-4
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">6722.462777245365,0.0
+6722.462777245365,4.3946074527229377E-4
+					</series>
+					<comment>Parameters: α=0.05, ε=0.05, bucket width=728.69, bucket count=9
+Runs: 72 in total, 72 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4500, 1.106e+04]
+Mean estimate of displayed sample: 6722 ± 373.3 (95% CI)</comment>
+				</plot>
+				<plot title="Probability Distribution" xaxis="run duration in time" yaxis="probability">
+					<series title="probability" type="b(728.687407)" color="0x0000ff" encoding="csv">4500.223583755778,0.19444444444444445
+5228.910991162223,0.18055555555555555
+5957.598398568667,0.20833333333333334
+6686.2858059751115,0.09722222222222222
+7414.973213381556,0.06944444444444445
+8143.660620788,0.1527777777777778
+8872.348028194445,0.05555555555555555
+9601.03543560089,0.027777777777777776
+10329.722843007334,0.013888888888888888
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">6722.462777245365,0.0
+6722.462777245365,0.20833333333333334
+					</series>
+					<comment>Parameters: α=0.05, ε=0.05, bucket width=728.69, bucket count=9
+Runs: 72 in total, 72 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4500, 1.106e+04]
+Mean estimate of displayed sample: 6722 ± 373.3 (95% CI)</comment>
+				</plot>
+				<plot title="Probability Confidence Intervals" xaxis="run duration in time" yaxis="probability">
+					<series title="upper limit" type="b(728.687407)" color="0xa0a0ff" encoding="csv">4500.223583755778,0.30466893329868333
+5228.910991162223,0.2889434084029285
+5957.598398568667,0.32022951112937165
+6686.2858059751115,0.19011034044555922
+7414.973213381556,0.15466731481612306
+8143.660620788,0.2569401232482781
+8872.348028194445,0.13617864931292403
+9601.03543560089,0.09676728911341523
+10329.722843007334,0.07497131085391912
+					</series>
+					<series title="lower limit" type="b(728.687407)" color="0x0000ff" encoding="csv">4500.223583755778,0.1105837866784895
+5228.910991162223,0.09979350815289616
+5957.598398568667,0.12155120290780827
+6686.2858059751115,0.039989500933602505
+7414.973213381556,0.022931659153745478
+8143.660620788,0.07881196318794174
+8872.348028194445,0.015342537111130598
+9601.03543560089,0.0033819003261732383
+10329.722843007334,3.515744052335976E-4
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">6722.462777245365,0.0
+6722.462777245365,0.32022951112937165
+					</series>
+					<comment>Parameters: α=0.05, ε=0.05, bucket width=728.69, bucket count=9
+Runs: 72 in total, 72 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4500, 1.106e+04]
+Mean estimate of displayed sample: 6722 ± 373.3 (95% CI)</comment>
+				</plot>
+				<plot title="Cumulative Probability Distribution" xaxis="run duration in time" yaxis="probability">
+					<series title="cumulative" type="l" color="0x000000" encoding="csv">4500.223583755778,0.0
+5228.910991162223,0.19444444444444445
+5957.598398568667,0.375
+6686.2858059751115,0.5833333333333334
+7414.973213381556,0.6805555555555556
+8143.660620788,0.75
+8872.348028194445,0.9027777777777778
+9601.03543560089,0.9583333333333334
+10329.722843007334,0.9861111111111112
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">6722.462777245365,0.0
+6722.462777245365,1.0
+					</series>
+					<comment>Parameters: α=0.05, ε=0.05, bucket width=728.69, bucket count=9
+Runs: 72 in total, 72 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4500, 1.106e+04]
+Mean estimate of displayed sample: 6722 ± 373.3 (95% CI)</comment>
+				</plot>
+				<plot title="Cumulative Probability Confidence Intervals" xaxis="run duration in time" yaxis="probability">
+					<series title="upper limit" type="k" color="0x0000dd" encoding="csv">4500.223583755778,0.04994408370585468
+5228.910991162223,0.30466893329868333
+5957.598398568667,0.4970140706287165
+6686.2858059751115,0.6984788317689608
+7414.973213381556,0.7855820639126873
+8143.660620788,0.844607342645625
+8872.348028194445,0.9600104990663975
+9601.03543560089,0.9913235026836562
+10329.722843007334,0.9996484255947664
+					</series>
+					<series title="lower limit" type="k" color="0xdd0000" encoding="csv">4500.223583755778,0.0
+5228.910991162223,0.1105837866784895
+5957.598398568667,0.26361094760164844
+6686.2858059751115,0.46111325839577144
+7414.973213381556,0.560141563471466
+8143.660620788,0.6339719278620991
+8872.348028194445,0.8098896595544408
+9601.03543560089,0.8830251801740586
+10329.722843007334,0.9250286891460808
+					</series>
+					<series title="cumulative" type="l" color="0x000000" encoding="csv">4500.223583755778,0.0
+5228.910991162223,0.19444444444444445
+5957.598398568667,0.375
+6686.2858059751115,0.5833333333333334
+7414.973213381556,0.6805555555555556
+8143.660620788,0.75
+8872.348028194445,0.9027777777777778
+9601.03543560089,0.9583333333333334
+10329.722843007334,0.9861111111111112
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">6722.462777245365,0.0
+6722.462777245365,1.0
+					</series>
+					<comment>Parameters: α=0.05, ε=0.05, bucket width=728.69, bucket count=9
+Runs: 72 in total, 72 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4500, 1.106e+04]
+Mean estimate of displayed sample: 6722 ± 373.3 (95% CI)</comment>
+				</plot>
+				<plot title="Frequency Histogram" xaxis="run duration in time" yaxis="count">
+					<series title="count" type="b(728.687407)" color="0x0000ff" encoding="csv">4500.223583755778,14.0
+5228.910991162223,13.0
+5957.598398568667,15.0
+6686.2858059751115,7.0
+7414.973213381556,5.0
+8143.660620788,11.0
+8872.348028194445,4.0
+9601.03543560089,2.0
+10329.722843007334,1.0
+					</series>
+					<series title="average" type="pl" color="0x00dd00" encoding="csv">6722.462777245365,0.0
+6722.462777245365,15.0
+					</series>
+					<comment>Parameters: α=0.05, ε=0.05, bucket width=728.69, bucket count=9
+Runs: 72 in total, 72 (100%) displayed, 0 (0%) remaining
+Span of displayed sample: [4500, 1.106e+04]
+Mean estimate of displayed sample: 6722 ± 373.3 (95% CI)</comment>
+				</plot>
+			</result>
+		</query>
+	</queries>
+</nta>

@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+	<declaration>// Global Declarations
+const int N=5;
+const int StableLeaderHeartbeatCount = 100;
+
+// Upper and lower bounds for election (ET) and heartbeat (HB) timeouts
+const int ETL=5;
+const int ETU=10;
+const int HBL=1;
+const int HBU=2;
+
+// the term according to the RPC broadcaster
+int heartbeatTerm;
+int heartbeatCounter;
+int requestVoteTerm;
+
+// id of vote requester
+int[0,N] requesterId;
+
+broadcast chan stable;
+
+// RPCs
+broadcast chan requestVote;
+broadcast chan heartbeat;
+
+// Votes for each candidate
+int[0,N] votes[N];
+
+int max(int a, int b) {
+    return (a &gt; b) ? a : b;
+}</declaration>
+	<template>
+		<name x="5" y="5">Node</name>
+		<parameter>int[0,5] id</parameter>
+		<declaration>// Local Declarations
+clock timer;
+int currentTerm;
+int timeout = -1;
+// id of the candidate this node has voted for in the current term
+int voted = false;
+</declaration>
+		<location id="id0" x="561" y="153">
+			<name x="399" y="127">Follower</name>
+			<label kind="invariant" x="365" y="144">timer &lt;= timeout</label>
+		</location>
+		<location id="id1" x="918" y="153">
+			<name x="926" y="161">Candidate</name>
+			<label kind="invariant" x="926" y="178">timer &lt;= timeout</label>
+		</location>
+		<location id="id2" x="1317" y="153">
+			<name x="1292" y="119">Leader</name>
+			<label kind="invariant" x="1266" y="102">timer &lt;= timeout</label>
+		</location>
+		<location id="id3" x="1513" y="306">
+			<committed/>
+		</location>
+		<location id="id4" x="561" y="399">
+			<committed/>
+		</location>
+		<location id="id5" x="229" y="42">
+			<label kind="comments" x="-25" y="-8">Each node starts in this
+commited state to force it
+to pick a random timeout
+immediately</label>
+			<committed/>
+		</location>
+		<location id="id6" x="1674" y="59">
+			<name x="1649" y="25">StableLeader</name>
+			<label kind="comments" x="1555" y="-136">The machine moves to this state once
+ it has sent enough heartbeats to 
+safely say it is a stable leader.
+
+This is to make the state space
+finite, which allows the model
+checker to verify it.</label>
+		</location>
+		<location id="id7" x="263" y="-127">
+			<name x="178" y="-161">FollowingStableLeader</name>
+		</location>
+		<init ref="id5"/>
+		<transition id="id8">
+			<source ref="id0"/>
+			<target ref="id7"/>
+			<label kind="synchronisation" x="314" y="-102">stable?</label>
+		</transition>
+		<transition id="id9">
+			<source ref="id2"/>
+			<target ref="id6"/>
+			<label kind="guard" x="1504" y="110">timer&gt;=timeout
+&amp;&amp; heartbeatCounter &gt; StableLeaderHeartbeatCount</label>
+			<label kind="synchronisation" x="1504" y="152">stable!</label>
+		</transition>
+		<transition id="id10">
+			<source ref="id1"/>
+			<target ref="id4"/>
+			<label kind="guard" x="901" y="229">requestVoteTerm &gt; currentTerm</label>
+			<label kind="synchronisation" x="901" y="246">requestVote?</label>
+			<label kind="assignment" x="901" y="263">votes[requesterId]++,
+voted:=true,
+currentTerm:=requestVoteTerm,
+votes[id]:=0</label>
+			<nail x="867" y="331"/>
+		</transition>
+		<transition id="id11">
+			<source ref="id5"/>
+			<target ref="id0"/>
+			<label kind="select" x="271" y="17">rand:int[ETL,ETU]</label>
+			<label kind="assignment" x="272" y="34">timeout:=rand</label>
+		</transition>
+		<transition id="id12">
+			<source ref="id2"/>
+			<target ref="id4"/>
+			<label kind="guard" x="790" y="408">currentTerm &lt; heartbeatTerm</label>
+			<label kind="synchronisation" x="790" y="425">heartbeat?</label>
+			<label kind="assignment" x="790" y="442">currentTerm:=heartbeatTerm</label>
+			<nail x="1122" y="391"/>
+		</transition>
+		<transition id="id13">
+			<source ref="id1"/>
+			<target ref="id4"/>
+			<label kind="guard" x="595" y="229">currentTerm&lt;=heartbeatTerm</label>
+			<label kind="synchronisation" x="595" y="246">heartbeat?</label>
+			<label kind="assignment" x="595" y="263">votes[id]:=0,
+currentTerm:=heartbeatTerm</label>
+			<nail x="824" y="306"/>
+		</transition>
+		<transition id="id14">
+			<source ref="id4"/>
+			<target ref="id0"/>
+			<label kind="select" x="408" y="306">rand:int[ETL,ETU]</label>
+			<label kind="assignment" x="408" y="327">timer:=0,
+timeout:=rand</label>
+		</transition>
+		<transition id="id15">
+			<source ref="id3"/>
+			<target ref="id2"/>
+			<label kind="synchronisation" x="1326" y="280">heartbeat!</label>
+			<label kind="assignment" x="1326" y="297">timer:=0,
+heartbeatCounter++</label>
+			<nail x="1334" y="255"/>
+		</transition>
+		<transition id="id16">
+			<source ref="id2"/>
+			<target ref="id3"/>
+			<label kind="guard" x="1445" y="204">timer&gt;=timeout 
+&amp;&amp; heartbeatCounter &lt;= StableLeaderHeartbeatCount</label>
+		</transition>
+		<transition id="id17">
+			<source ref="id1"/>
+			<target ref="id1"/>
+			<label kind="select" x="841" y="-187">rand:int[ETL,ETU]</label>
+			<label kind="guard" x="841" y="-204">timer == timeout &amp;&amp; votes[id] &lt; ((N/2)+1)</label>
+			<label kind="synchronisation" x="841" y="-170">requestVote!</label>
+			<label kind="assignment" x="841" y="-153">requesterId:=id,
+currentTerm:=(++currentTerm),
+requestVoteTerm:=currentTerm,
+votes[id]:=1,
+voted:=true,
+timer:=0,
+timeout:=rand</label>
+			<label kind="comments" x="841" y="-297">A new timeout is randomly selected
+each time the the Candidate starts
+a new term to prevent repeated
+split votes.</label>
+			<nail x="875" y="0"/>
+			<nail x="952" y="0"/>
+		</transition>
+		<transition id="id18">
+			<source ref="id0"/>
+			<target ref="id0"/>
+			<label kind="synchronisation" x="442" y="-161">heartbeat?</label>
+			<label kind="assignment" x="442" y="-144">timer:=0,
+currentTerm:=
+    max(currentTerm, heartbeatTerm),
+voted:=false</label>
+			<label kind="comments" x="382" y="-297">Follower's election timeout resets
+when it receives a heartbeat from 
+Leader.
+
+Also, voted is set to false
+in prep for the next term.</label>
+			<nail x="450" y="-51"/>
+			<nail x="561" y="-51"/>
+		</transition>
+		<transition id="id19">
+			<source ref="id0"/>
+			<target ref="id1"/>
+			<label kind="guard" x="586" y="-9">timer &gt;= timeout</label>
+			<label kind="synchronisation" x="586" y="8">requestVote!</label>
+			<label kind="assignment" x="586" y="25">requesterId:=id,
+currentTerm:=(++currentTerm),
+requestVoteTerm:=currentTerm,
+votes[id]:=1,
+voted:=true,
+timer:=0</label>
+		</transition>
+		<transition id="id20">
+			<source ref="id0"/>
+			<target ref="id0"/>
+			<label kind="guard" x="-85" y="289">(voted == false)
+    || (requestVoteTerm &gt;= currentTerm)</label>
+			<label kind="synchronisation" x="-85" y="331">requestVote?</label>
+			<label kind="assignment" x="-85" y="348">votes[requesterId]++,
+voted:=true,
+currentTerm:=
+    max(currentTerm, requestVoteTerm),
+timer:=0</label>
+			<nail x="229" y="229"/>
+			<nail x="297" y="357"/>
+		</transition>
+		<transition id="id21">
+			<source ref="id1"/>
+			<target ref="id2"/>
+			<label kind="select" x="1037" y="8">rand:int[HBL,HBU]</label>
+			<label kind="guard" x="1037" y="-9">votes[id]&gt;=((N/2)+1) &amp;&amp; timer &lt;= timeout</label>
+			<label kind="assignment" x="1037" y="25">heartbeatTerm=max(heartbeatTerm, currentTerm),
+timeout:=rand,
+votes[id]:=0,
+voted:=false,
+timer:=0,
+heartbeatCounter:=0</label>
+		</transition>
+	</template>
+	<system>// System Declarations
+const int C_RED    = 0;
+const int C_YELLOW = 6;
+const int C_GREEN  = 1;
+
+node0 := Node(0);
+node1 := Node(1);
+node2 := Node(2);
+node3 := Node(3);
+node4 := Node(4);
+
+
+// Nodes part of the system
+system node0, node1, node2, node3, node4;
+
+gantt {
+    node0:
+      node0.Follower  -&gt; C_RED,
+      node0.Candidate -&gt; C_YELLOW,
+      node0.Leader    -&gt; C_GREEN;
+
+    node1:
+      node1.Follower  -&gt; C_RED,
+      node1.Candidate -&gt; C_YELLOW,
+      node1.Leader    -&gt; C_GREEN;
+
+    node2:
+      node2.Follower  -&gt; C_RED,
+      node2.Candidate -&gt; C_YELLOW,
+      node2.Leader    -&gt; C_GREEN;
+
+    node3:
+      node3.Follower  -&gt; C_RED,
+      node3.Candidate -&gt; C_YELLOW,
+      node3.Leader    -&gt; C_GREEN;
+
+    node4:
+      node4.Follower  -&gt; C_RED,
+      node4.Candidate -&gt; C_YELLOW,
+      node4.Leader    -&gt; C_GREEN;
+}</system>
+	<queries>
+		<query>
+			<formula>((node0.Leader + node1.Leader + node2.Leader + node3.Leader + node4.Leader) == 2) --&gt; ((node0.StableLeader + node1.StableLeader + node2.StableLeader + node3.StableLeader + node4.StableLeader) == 1)</formula>
+			<comment>If there are two leaders, then eventually there will be only one StableLeader.</comment>
+			<result outcome="success" type="quality" timestamp="2026-04-12 13:38:47 -0700">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; node0.StableLeader + node1.StableLeader + node2.StableLeader + node3.StableLeader + node4.StableLeader == 1</formula>
+			<comment>It is possible for some node to become the stable leader.</comment>
+			<result outcome="success" type="quality" timestamp="2026-03-27 17:01:47 -0700">
+			</result>
+		</query>
+		<query>
+			<formula>A[] deadlock imply (
+	(node0.StableLeader + node1.StableLeader + node2.StableLeader + node3.StableLeader + node4.StableLeader) == 1
+	and
+	(node0.FollowingStableLeader + node1.FollowingStableLeader + node2.FollowingStableLeader + node3.FollowingStableLeader + node4.FollowingStableLeader) == 4
+)</formula>
+			<comment>For all states, the only way the system can reach a deadlock is if one node has become a StableLeader and all other nodes are followers of that StableLeader.
+This makes the statespace finite and searchable, Otherwise the stable leader would continuously send heartbeats.</comment>
+			<option key="--exploration" value="0"/>
+			<option key="--search-order" value="0"/>
+			<option key="--diagnostic" value="2"/>
+			<result outcome="success" type="quality" timestamp="2026-03-27 17:02:16 -0700">
+				<option key="--exploration" value="0"/>
+				<option key="--search-order" value="0"/>
+				<option key="--diagnostic" value="2"/>
+			</result>
+		</query>
+		<query>
+			<formula>A[] (node0.StableLeader + node1.StableLeader + node2.StableLeader + node3.StableLeader + node4.StableLeader) &gt;= 0 and (node0.StableLeader + node1.StableLeader + node2.StableLeader + node3.StableLeader + node4.StableLeader) &lt;= 1</formula>
+			<comment>Invariantly, only one node can ever be a stable leader.</comment>
+			<result outcome="success" type="quality" timestamp="2026-03-27 17:05:11 -0700">
+			</result>
+		</query>
+	</queries>
+</nta>
