@@ -1,4 +1,12 @@
-AI translation of an excerpt from my paper to markdown:
+**Credit to**
+
+- S. Lee, W. Lee, S. Cho, S. Lee, and J. Lee, “CARTEL: Consensus adapting real-time and efficient logging,” in Proceedings of the 2025 IEEE Real-Time Systems Symposium (RTSS), Dec. 2025, pp. 461–473. IEEE.
+
+- D. Ongaro and J. Ousterhout, “In search of an understandable consensus algorithm,” in Proc. USENIX Annual Technical Conference (USENIX ATC), 2014, pp. 305–319.
+
+- Github User psjung, “Raft-Uppaal,” GitHub repository. [Online]. Available: [Raft-Uppaal repository](https://github.com/psjung/Raft-Uppaal). Accessed: Apr. 12, 2026.
+
+## Excerpt from my paper, translated to Markdown:
 
 ### Model Overview
 
