@@ -6,7 +6,7 @@
 
 - Github User psjung, “Raft-Uppaal,” GitHub repository. [Online]. Available: [Raft-Uppaal repository](https://github.com/psjung/Raft-Uppaal). Accessed: Apr. 12, 2026.
 
-## Excerpt from my paper, translated to Markdown:
+## Excerpt from my paper, translated to Markdown using AI:
 
 ### Model Overview
 
